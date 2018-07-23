@@ -1,5 +1,21 @@
 *** WooCommerce PayU Gateway Changelog ***
 
+4.6.10 - 2018-07-18
+* Poprawienie problemu z walidacją dla płatności cyklicznych
+* Poprawienie problemu z nietypowymi znakami w nazwie bloga co powodowało problemy z podpisem sig
+
+4.6.9 - 2018-06-11
+* Poprawienie problemu z przekierowaniem po błędnej transakcji z kodem 501
+
+4.6.8 - 2018-05-29
+* Poprawienie reakcji na błąd 501 podczas anulowania płatności
+
+4.6.7 - 2018-05-23
+* Dodanie wsparcia dla WooCommerce 3.4
+
+4.6.6 - 2018-05-14
+* Poprawienie błędu 103 zwracanego przez PayU Api zależnie od ustawień podatków
+
 4.6.5 - 2018-03-22
 * Dodanie wsparcia trybu Sandbox dla Classic API
 * Poprawienie dostępności płatności cyklicznych - tylko dla subskrypcji

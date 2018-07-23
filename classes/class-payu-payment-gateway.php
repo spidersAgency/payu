@@ -52,6 +52,7 @@ if ( class_exists( 'WC_Payment_Gateway' ) ) {
 
 		protected $debug = false;
 
+		/** @var WPDesk_PayU_Rest_API */
 		private $rest_api = false;
 
 
@@ -922,6 +923,101 @@ if ( class_exists( 'WC_Payment_Gateway' ) ) {
 		}
 
 		/**
+		 * Is that notification api or live person
+		 *
+		 * @return bool
+		 */
+		private function is_api_speaking_to_as() {
+			return empty( $_GET[ WPDesk_PayU_Rest_API::PARAM_NAME_HASH ] );
+		}
+
+		/**
+		 * Is there any error info in GET callback
+		 * Note that the $_REQUEST is beign used. That is because error var in $_GET is overriden.
+		 *
+		 * @return bool
+		 */
+		private function is_return_callback_error() {
+			return ! empty( $_REQUEST[ WPDesk_PayU_Rest_API::PARAM_NAME_ERROR ] );
+		}
+
+		/**
+		 * Handle response for live person
+		 * Note that the $_REQUEST is beign used. That is because error var in $_GET is overriden.
+		 *
+		 * @param WC_Order $order
+		 */
+		private function handle_rest_api_person_response( WC_Order $order ) {
+			if ( $this->rest_api->is_hash_valid( $order, $_GET[ WPDesk_PayU_Rest_API::PARAM_NAME_HASH ] ) ) {
+				if ( $this->is_return_callback_error() ) {
+					$this->update_order_error_status( $order, $_REQUEST[ WPDesk_PayU_Rest_API::PARAM_NAME_ERROR ] );
+				}
+			}
+			wp_redirect( $this->get_return_url( $order ) );
+		}
+
+		/**
+		 * Process order status from PayU
+		 *
+		 * @param WC_Order $order
+		 * @param string $payu_status
+		 */
+		private function process_order_status( WC_Order $order, $payu_status ) {
+			if ( in_array( $order->get_status(), array( 'pending', 'failed' ) ) ) {
+				if ( $payu_status === 'COMPLETED' ) {
+					$order->add_order_note( __( 'Płatność PayU została potwierdzona.',
+						'woocommerce_payu' ) );
+					$order->payment_complete();
+				}
+				if ( $payu_status === 'CANCELED' ) {
+					$order->update_status( 'failed', __( 'Anulowana płatność PayU.', 'woocommerce_payu' ) );
+				}
+				if ( $payu_status === 'REJECTED' ) {
+					$order->update_status( 'failed', __( 'Odrzucona płatność PayU.', 'woocommerce_payu' ) );
+				}
+			} else {
+				if ( $order->get_status() !== 'processing' && $payu_status !== 'COMPLETED' ) {
+					$order->add_order_note( sprintf( __( 'PayU: aktualizacja transakcji, status PayU: %s. Akcja nie została podjęta - aktualny status zamówienia: %s.',
+						'woocommerce_payu' ), $payu_status, $order->get_status() ) );
+				}
+			}
+			if ( version_compare( WC_VERSION, '2.7', '>=' ) ) {
+				$order->save();
+			}
+		}
+
+		/**
+		 * @param WC_Order $order
+		 *
+		 * @throws Exception
+		 */
+		private function handle_rest_api_response( WC_Order $order ) {
+			$body = file_get_contents( 'php://input' );
+			$json = json_decode( $body, true );
+			if ( is_array( $json ) && isset( $json['order'] ) ) {
+				$verify_payu_order = $this->rest_api->get_order( $json['order']['orderId'] );
+				if ( isset( $verify_payu_order['orders'] ) && isset( $verify_payu_order['orders'][0] ) ) {
+					$payu_order = $verify_payu_order['orders'][0];
+				} else {
+					throw new Exception( __( 'Niepoprawne zamówienie PayU!', 'woocommerce_payu' ) );
+				}
+				$payu_requests = wpdesk_get_order_meta( $order, '_payu_requests', true );
+				if ( $payu_requests == '' ) {
+					$payu_requests = [];
+				}
+				$payu_requests[ current_time( 'timestamp' ) ] = $json;
+				wpdesk_update_order_meta( $order, '_payu_requests', $payu_requests );
+				$payu_order_id = wpdesk_get_order_meta( $order, '_payu_order_id', true );
+				if ( $payu_order_id == '' ) {
+					$payu_order_id = $payu_order['orderId'];
+					wpdesk_update_order_meta( $order, '_payu_order_id', $payu_order_id );
+				}
+				$payu_status = $payu_order['status'];
+				$this->process_order_status( $order, $payu_status );
+			}
+		}
+
+		/**
 		 * Check for PayU Response and verify validity
 		 * @throws Exception
 		 * @since 1.0.0
@@ -930,61 +1026,12 @@ if ( class_exists( 'WC_Payment_Gateway' ) ) {
 			if ( isset( $_GET['rest_api'] ) && $_GET['rest_api'] == '1' ) {
 				$order = wc_get_order( $_GET['order_id'] );
 				if ( $order ) {
-					$body = file_get_contents( 'php://input' );
-					$json = json_decode( $body, true );
-					if ( is_array( $json ) && isset( $json['order'] ) ) {
-						$verify_payu_order = $this->rest_api->get_order( $json['order']['orderId'] );
-						if ( isset( $verify_payu_order['orders'] ) && isset( $verify_payu_order['orders'][0] ) ) {
-							$payu_order = $verify_payu_order['orders'][0];
-						} else {
-							throw new Exception( __( 'Niepoprawne zamówienie PayU!', 'woocommerce_payu' ) );
-						}
-						$payu_requests = wpdesk_get_order_meta( $order, '_payu_requests', true );
-						if ( $payu_requests == '' ) {
-							$payu_requests = [];
-						}
-						$payu_requests[ current_time( 'timestamp' ) ] = $json;
-						wpdesk_update_order_meta( $order, '_payu_requests', $payu_requests );
-						$payu_order_id = wpdesk_get_order_meta( $order, '_payu_order_id', true );
-						if ( $payu_order_id == '' ) {
-							$payu_order_id = $payu_order['orderId'];
-							wpdesk_update_order_meta( $order, '_payu_order_id', $payu_order_id );
-						}
-						$payu_status = $payu_order['status'];
-						if ( $order->get_status() == 'pending' || $order->get_status() == 'failed' ) {
-							if ( $payu_status == 'COMPLETED' ) {
-								$order->add_order_note( __( 'Płatność PayU została potwierdzona.',
-									'woocommerce_payu' ) );
-								if ( version_compare( WC_VERSION, '2.7', '>=' ) ) {
-									$order->save();
-								}
-								$order->payment_complete();
-								if ( version_compare( WC_VERSION, '2.7', '>=' ) ) {
-									$order->save();
-								}
-							}
-							if ( $payu_status == 'CANCELED' ) {
-								$order->update_status( 'failed', __( 'Anulowana płatność PayU.', 'woocommerce_payu' ) );
-								if ( version_compare( WC_VERSION, '2.7', '>=' ) ) {
-									$order->save();
-								}
-							}
-							if ( $payu_status == 'REJECTED' ) {
-								$order->update_status( 'failed', __( 'Odrzucona płatność PayU.', 'woocommerce_payu' ) );
-								if ( version_compare( WC_VERSION, '2.7', '>=' ) ) {
-									$order->save();
-								}
-							}
-						} else {
-							if ( $order->get_status() != 'processing' && $payu_status != 'COMPLETED' ) {
-								$order->add_order_note( sprintf( __( 'PayU: aktualizacja transakcji, status PayU: %s. Akcja nie została podjęta - aktualny status zamówienia: %s.',
-									'woocommerce_payu' ), $payu_status, $order->get_status() ) );
-								if ( version_compare( WC_VERSION, '2.7', '>=' ) ) {
-									$order->save();
-								}
-							}
-						}
+					if ( $this->is_api_speaking_to_as() ) {
+						return $this->handle_rest_api_response( $order );
+					} else {
+						return $this->handle_rest_api_person_response( $order );
 					}
+
 				}
 			} else {
 				$woocommerce = Woocommerce::instance();
@@ -1055,18 +1102,7 @@ if ( class_exists( 'WC_Payment_Gateway' ) ) {
 
 					if ( ! empty( $_GET['errorId'] ) ) // error request
 					{
-						$statusData = $this->get_order_error_status( $_GET['errorId'] );
-
-						if ( ! empty( $statusData['tstatus'] ) ) {
-							$order->update_status( $statusData['tstatus'] );
-						}
-						if ( ! empty( $statusData['tmsg'] ) ) {
-							$order->add_order_note( $statusData['tmsg'] );
-							wc_add_notice( $statusData['tmsg'], 'error' );
-						} else {
-							$order->add_order_note( __( 'Płatności PayU: błąd',
-									'woocommerce_payu' ) . ' ' . $_GET['errorId'] );
-						}
+						$this->update_order_error_status( $order, $_GET['errorId'] );
 
 					} else { // success request
 						$this->update_order_status_from_payu( $order );
@@ -1080,6 +1116,27 @@ if ( class_exists( 'WC_Payment_Gateway' ) ) {
 			}
 
 		} // End check_payu_response()
+
+		/**
+		 * Change order status using error code
+		 *
+		 * @param WC_Order $order
+		 * @param string|int $error_id
+		 */
+		private function update_order_error_status( WC_Order $order, $error_id ) {
+			$statusData = $this->get_order_error_status( $error_id );
+
+			if ( ! empty( $statusData['tstatus'] ) ) {
+				$order->update_status( $statusData['tstatus'] );
+			}
+			if ( ! empty( $statusData['tmsg'] ) ) {
+				$order->add_order_note( $statusData['tmsg'] );
+				wc_add_notice( $statusData['tmsg'], 'error' );
+			} else {
+				$order->add_order_note( __( 'Płatności PayU: błąd',
+						'woocommerce_payu' ) . ' ' . $_GET['errorId'] );
+			}
+		}
 
 		/**
 		 * @param int $code
@@ -1197,7 +1254,7 @@ if ( class_exists( 'WC_Payment_Gateway' ) ) {
 					break;
 				case '501':
 					$tstatus = 'failed';
-					$tmsg    = __( 'Błąd', 'woocommerce_payu' ) . ' ' . $code;
+					$tmsg    = __( 'Anulowana płatność PayU.', 'woocommerce_payu' );
 					break;
 				case '502':
 					//$tstatus = 'failed';

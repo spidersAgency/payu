@@ -249,7 +249,7 @@ if ( class_exists( 'WC_Payment_Gateway' ) ) {
 				$merchant_pos_id = $this->get_option( 'sandbox_pos_id', '' );
 				$key_2           = $this->get_option( 'sandbox_key_2', '' );
 			}
-			$shop_name         = get_option( 'blogname', '' );
+			$shop_name         = $this->get_blog_alnum_name();
 			$total_amount      = round( $cart->total, 2 ) * 100;
 			$currency_code     = get_woocommerce_currency();
 			$customer_language = 'pl';
@@ -264,6 +264,22 @@ if ( class_exists( 'WC_Payment_Gateway' ) ) {
 
 			include( 'views/payu-subscription-form.php' );
 		} // End payment_fields()
+
+		/**
+		 * Returns blog alphanumeric name from option.
+		 *
+		 * @return string
+		 */
+		private function get_blog_alnum_name() {
+			$blog_name = get_option( 'blogname', '' );
+			if (function_exists('iconv')) {
+				$blog_name = iconv("UTF-8","ISO-8859-2//IGNORE", $blog_name);
+				$blog_name = iconv("ISO-8859-2","UTF-8", $blog_name);
+			}
+			$blog_name = preg_replace("/[^a-zA-Z0-9_.-]/", '', $blog_name);
+			return $blog_name;
+		}
+
 
 		/**
 		 * Process the payment and return the result.

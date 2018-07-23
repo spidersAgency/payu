@@ -3,21 +3,21 @@
 	Plugin Name: WooCommerce PayU
 	Plugin URI: https://www.wpdesk.pl/sklep/payu-woocommerce/
 	Description: Wtyczka do WooCommerce. Bramka płatności dla systemu PayU.
-	Version: 4.6.5
+	Version: 4.6.10
 	Author: WP Desk
 	Text Domain: woocommerce_payu
 	Domain Path: /languages/
 	Author URI: https://www.wpdesk.pl/
 	Requires at least: 4.5
-	Tested up to: 4.9.4
-	WC requires at least: 2.6.14
-    WC tested up to: 3.3.4
+    Tested up to: 4.9.7
+    WC requires at least: 3.0.0
+    WC tested up to: 3.4.3
 */
 
 $payu_plugin_data = [
 	'plugin'     => plugin_basename( __FILE__ ),
 	'product_id' => 'WooCommerce PayU',
-	'version'    => '4.6.5',
+	'version'    => '4.6.10',
 	'config_uri' => admin_url( 'admin.php?page=wc-settings&tab=checkout&section=wc_gateway_payu' )
 ];
 
@@ -30,7 +30,7 @@ require_once( plugin_basename( 'classes/wpdesk/class-plugin.php' ) );
 
 class WPDesk_WooCommerce_PayU_Plugin extends WPDesk_Plugin_1_5 {
 
-	private $script_version = '11';
+	private $script_version = '4.6.10';
 
 	public static $_instance = null;
 
